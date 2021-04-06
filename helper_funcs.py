@@ -29,6 +29,7 @@ import re
 import pickle 
 from autoimpute.imputations import SingleImputer, MultipleImputer
 import image_slicer
+import scipy
 
 def Leaf_inference(leaf_learner_path, img):
     #load leaf U-NET model
@@ -785,16 +786,19 @@ def secondary_lesions_removal(mask_np,mask_fname, mask_dir):
         img_state = 3
 
     elif len(lesion_labels) == 0:
-        corrected_mask = o_mask
+        #can correct for some external leaves
+        potential_leaf_ids = [l for l in ccs_sort if l not in [0]]
+        leaf_id = potential_leaf_ids[0]
+        corrected_mask = (label_image == leaf_id)*1
         leaf_label = 1
         lesion_label = 2
         img_state = 2
     return corrected_mask, leaf_label, lesion_label, img_state, label_image, leaf_labels
 
-def leaf_measures_calculations(fname, bn_dir,corrected_mask,img_state, tgi_params, leaf_label, lesion_label):
-    lambdaR = tgi_params[0]
-    lambdaG = tgi_params[1]
-    lambdaB = tgi_params[2]
+def leaf_measures_calculations(fname, bn_dir,corrected_mask,img_state, GLI_params, leaf_label, lesion_label):
+    lambdaR = GLI_params[0]
+    lambdaG = GLI_params[1]
+    lambdaB = GLI_params[2]
     if img_state == 3:
     #before is if check_ccs >=3:
     #leaf size
@@ -810,20 +814,25 @@ def leaf_measures_calculations(fname, bn_dir,corrected_mask,img_state, tgi_param
             img_bgr = cv2.imread(bn_path)
         leaf_pix = (corrected_mask == leaf_label)*1
         leaf_bgr = img_bgr.copy()
-        for ax in range(3):
-            leaf_bgr[:,:,ax] = leaf_bgr[:,:,ax] * leaf_pix
 
         #calculate leaf greenness index? or use triangular greenness index
-        leaf_b = leaf_bgr[:,:,0]/255
+        for ax in range(3):
+            leaf_bgr[:,:,ax] = leaf_bgr[:,:,ax] * leaf_pix
+        #calculate leaf greenness index? or use triangular greenness index
+        leaf_b = leaf_bgr[:,:,0]
         leaf_b_sum = np.sum(leaf_b)
-        leaf_g = leaf_bgr[:,:,1]/255
+        leaf_g = leaf_bgr[:,:,1]
         leaf_g_sum = np.sum(leaf_g)
-        leaf_r = leaf_bgr[:,:,2]/255
+        leaf_r = leaf_bgr[:,:,2]
         leaf_r_sum = np.sum(leaf_r)
 
-        Lesion_size = float(lesion_pn/(lesion_pn+leaf_pn))
-        TGI = float(np.sum(0.5*((lambdaR - lambdaB)*(leaf_r - leaf_g) - (lambdaR - lambdaG)*(leaf_r - leaf_b)))/leaf_pn)
-        NGRDI = float(((leaf_g_sum - leaf_r_sum)/(leaf_g_sum + leaf_r_sum))*255)
+        whole_leaf_area = np.sum(corrected_mask>0)
+
+        #GLI i guess? using default values from original paper
+
+        Lesion_size = float(lesion_pn/whole_leaf_area)
+        GLI = float((2*leaf_g_sum - leaf_r_sum - leaf_b_sum)/(2*leaf_g_sum + leaf_r_sum + leaf_b_sum))
+        NGRDI = float(((leaf_g_sum - leaf_r_sum)/(leaf_g_sum + leaf_r_sum)))
         lsn = float(lesion_pn)
 
     elif img_state == 2:
@@ -837,22 +846,23 @@ def leaf_measures_calculations(fname, bn_dir,corrected_mask,img_state, tgi_param
         leaf_bgr = img_bgr.copy()
         for ax in range(3):
             leaf_bgr[:,:,ax] = leaf_bgr[:,:,ax] * leaf_pix
+
         #calculate leaf greenness index? or use triangular greenness index
-        leaf_b = leaf_bgr[:,:,0]/255
+        leaf_b = leaf_bgr[:,:,0]
         leaf_b_sum = np.sum(leaf_b)
-        leaf_g = leaf_bgr[:,:,1]/255
+        leaf_g = leaf_bgr[:,:,1]
         leaf_g_sum = np.sum(leaf_g)
-        leaf_r = leaf_bgr[:,:,2]/255
+        leaf_r = leaf_bgr[:,:,2]
         leaf_r_sum = np.sum(leaf_r)
 
-        #TGI i guess? using default values from original paper
+        #GLI i guess? using default values from original paper
 
         Lesion_size = float(0)
-        TGI = float(np.sum(0.5*((lambdaR - lambdaB)*(leaf_r - leaf_g) - (lambdaR - lambdaG)*(leaf_r - leaf_b)))/leaf_pn)
-        NGRDI = float(((leaf_g_sum - leaf_r_sum)/(leaf_g_sum + leaf_r_sum))*255)
+        GLI = float((2*leaf_g_sum - leaf_r_sum - leaf_b_sum)/(2*leaf_g_sum + leaf_r_sum + leaf_b_sum))
+        NGRDI = float(((leaf_g_sum - leaf_r_sum)/(leaf_g_sum + leaf_r_sum)))
         lsn = float(0)
 
-    return Lesion_size,TGI, NGRDI, lsn
+    return Lesion_size,GLI, NGRDI, lsn
 
 def stats_analysis(leaf_measures,stats_test):
     anova_p_vals = []
@@ -884,17 +894,12 @@ def stats_analysis(leaf_measures,stats_test):
                 group_means.append(np.array(np.mean(df)))
     return anova_p_vals, tukeys_res, group_means
 
-def mask_gap_fill(corrected_mask, kernel_size = 7):
-    #create empty np array of the same size 
-    corrected_mask = np.uint8(corrected_mask)
-    h,w = corrected_mask.shape
-    filled_mask = np.zeros((h,w), np.uint8)
-    kernel = np.ones((kernel_size, kernel_size),np.uint8)
-    for i in range(len(np.unique(corrected_mask))):
-        layer = (corrected_mask == i+1)*1
-        layer = np.uint8(layer)
-        layer = cv2.morphologyEx(layer, cv2.MORPH_CLOSE, kernel)
-        filled_mask += (layer*i+1)
-    if len(np.unique(filled_mask)) > 3:
-        filled_mask[filled_mask > 2] = 2
-    return filled_mask
+def mask_gap_fill(corrected_mask):
+    filled = scipy.ndimage.morphology.binary_fill_holes(corrected_mask)
+    missed_area = filled - corrected_mask
+    if np.sum(missed_area)>0:
+        missed_area[missed_area > 0] = 2
+        gap_fill = corrected_mask + missed_area
+    else:
+        gap_fill = corrected_mask
+    return gap_fill

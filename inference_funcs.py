@@ -205,21 +205,20 @@ def Run_Leaf_Inference(leaf_fpath, clust_by, number_of_classes, time_series_anal
             cmask_proc(c_msk_files, c_df, leaf_path, overlap_dir, po_files,t,clust_by)
 
 
-
-def Run_Lesion_Inference(leaf_res_path, number_of_classes, time_series_analysis, bright_norm, ts_res,t, tgi_params=[670, 550, 480], lesion_learner_path = 'Lesion_UNet/v1', size = 64,  stats_test = 'anova'):
+def Run_Lesion_Inference(leaf_res_path, number_of_classes, time_series_analysis, bright_norm, ts_res,t, GLI_params=[670, 550, 480], lesion_learner_path = 'Lesion_UNet/v1', size = 64,  stats_test = 'anova'):
     bn_dir = bright_norm
     leaf_ls = []
     leaf_NGRDI = []
-    leaf_TGI = []
+    leaf_GLI = []
     leaf_lsn = []
-    tgi_params = tgi_params
+    GLI_params = GLI_params
     for clas in range(number_of_classes):
         class_dir = 'Class_'+str(int(clas+1))
         #currently inference on bright norm leaves...
         fpaths = glob.glob(os.path.join(leaf_res_path,class_dir)+'/*.png')
         clas_ls = []
         clas_NGRDI = []
-        clas_TGI = []
+        clas_GLI = []
         clas_lsn = []
         rescale_dir = 'rescaled_leaves'
         rescale_path = os.path.join(leaf_res_path, class_dir, rescale_dir)
@@ -246,34 +245,36 @@ def Run_Lesion_Inference(leaf_res_path, number_of_classes, time_series_analysis,
             #remove pl_ccs at the end # # # # # # # # # # # 
             corrected_mask, leaf_label, lesion_label, img_state, label_image, leaf_labels = secondary_lesions_removal(mask_np_ls,mask_fname,mask_dir)
             #image_state error... seems like mask_gap_fill isn't working properly.
-            #corrected_mask = mask_gap_fill(corrected_mask)
             img_state = len(np.unique(corrected_mask))
+            if img_state == 2:
+                corrected_mask = mask_gap_fill(corrected_mask)
+                img_state = len(np.unique(corrected_mask))
             imageio.imwrite(os.path.join(mask_dir,mask_fname), corrected_mask*127)
             #mask_check = skimage.measure.label(corrected_mask,background = 0, connectivity = 2)
             #check_ccs = len(np.unique(mask_check))
             if bright_norm == None:
-                Lesion_size, TGI, NGRDI, lsn = leaf_measures_calculations(fp,None,corrected_mask, img_state, tgi_params, leaf_label, lesion_label)
+                Lesion_size, GLI, NGRDI, lsn = leaf_measures_calculations(fp,None,corrected_mask, img_state, GLI_params, leaf_label, lesion_label)
             elif bright_norm != None:
-                Lesion_size, TGI, NGRDI, lsn = leaf_measures_calculations(fp,bn_dir,corrected_mask, img_state, tgi_params, leaf_label, lesion_label)
+                Lesion_size, GLI, NGRDI, lsn = leaf_measures_calculations(fp,bn_dir,corrected_mask, img_state, GLI_params, leaf_label, lesion_label)
 
             clas_ls.append(Lesion_size)
-            clas_TGI.append(TGI)
+            clas_GLI.append(GLI)
             clas_NGRDI.append(NGRDI)
             clas_lsn.append(lsn)
             
         leaf_ls.append(clas_ls)
-        leaf_TGI.append(clas_TGI)
+        leaf_GLI.append(clas_GLI)
         leaf_NGRDI.append(clas_NGRDI)
         leaf_lsn.append(clas_lsn)
 
-    leaf_measures = [leaf_ls, leaf_TGI, leaf_NGRDI, leaf_lsn]
+    leaf_measures = [leaf_ls, leaf_GLI, leaf_NGRDI, leaf_lsn]
     #also save leaf_measures as a whole df so can see individual leaf data
     flat_lists = []
     for l in leaf_measures:
         flattened = [val for sublist in l for val in sublist]
         flat_lists.append(flattened)
     flat_arr = np.array(flat_lists)
-    flat_df = pd.DataFrame(flat_lists, index = ["lesion_size(ratio)","TGI","NGRDI","lesion_size(pixels)"])
+    flat_df = pd.DataFrame(flat_lists, index = ["lesion_size(ratio)","GLI","NGRDI","lesion_size(pixels)"])
     flat_df = flat_df.T
     #write df to excel 
     flat_df_name = 'res.csv'
@@ -283,14 +284,14 @@ def Run_Lesion_Inference(leaf_res_path, number_of_classes, time_series_analysis,
     anova_p_vals, tukeys_res, group_means = stats_analysis(leaf_measures,stats_test)
 
     ls_mean = group_means[0]
-    TGI_mean = group_means[1]
+    GLI_mean = group_means[1]
     NGRDI_mean = group_means[2]
     lsn_mean = group_means[3]
     
     ls_fname = fname[:-12] + '_lesion_sizes.txt'
     ls_fpath = os.path.join(leaf_res_path, ls_fname)
-    TGI_fname = fname[:-12] + '_TGI.txt'
-    TGI_fpath = os.path.join(leaf_res_path, TGI_fname)
+    GLI_fname = fname[:-12] + '_GLI.txt'
+    GLI_fpath = os.path.join(leaf_res_path, GLI_fname)
     NGRDI_fname = fname[:-12] + '_NGRDI.txt'
     NGRDI_fpath = os.path.join(leaf_res_path, NGRDI_fname)
 
@@ -309,14 +310,14 @@ def Run_Lesion_Inference(leaf_res_path, number_of_classes, time_series_analysis,
     ls_file.write('Tukey HSD res: ' + str(tukeys_res[3])+'\n')
     ls_file.close()
     
-    #if len(TGI_mean) == number_of_classes:
-    TGI_file = open(TGI_fpath,'w')
-    TGI_file.write('TGI res: \n')
-    for i in range(len(TGI_mean)):
-        TGI_file.write('Group '+str(i+1)+' mean: ' + str(TGI_mean[i])+'\n')
-    TGI_file.write('One Way Anova adjusted p value: ' + str(anova_p_vals[1])+'\n')
-    TGI_file.write('Tukey HSD res: ' + str(tukeys_res[1])+'\n')
-    TGI_file.close()
+    #if len(GLI_mean) == number_of_classes:
+    GLI_file = open(GLI_fpath,'w')
+    GLI_file.write('GLI res: \n')
+    for i in range(len(GLI_mean)):
+        GLI_file.write('Group '+str(i+1)+' mean: ' + str(GLI_mean[i])+'\n')
+    GLI_file.write('One Way Anova adjusted p value: ' + str(anova_p_vals[1])+'\n')
+    GLI_file.write('Tukey HSD res: ' + str(tukeys_res[1])+'\n')
+    GLI_file.close()
     
     #if len(NGRDI_mean) == number_of_classes:
     NGRDI_file = open(NGRDI_fpath,'w')
@@ -386,7 +387,7 @@ def compile_time_series_results(time_series_analysis, ts_res,out_dir, ts_dir, mi
     #make measure dfs as well
     '''
 
-    m_names = ['lesion_size_ratio', 'TGI', 'NGRDI', 'lesion_size_pn']
+    m_names = ['lesion_size_ratio', 'GLI', 'NGRDI', 'lesion_size_pn']
     for measure in range(4):
         measure_df = pd.DataFrame()
         for group in range(len(ts_res)):
