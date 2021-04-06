@@ -1,6 +1,15 @@
 # Leaf segmentation project 2019
 
 This project was to create a pipeline for the segmentation of leaves and leaf lesions using the fastai api. The aim is to allow quantitative measurement
-of lesion sizes and degree of chlorosis (leaf greenness), and hence quantitative analysis of plant disease progression. The pipeline is incorporated 
-into a jupyter notebook, where different settings can be set (e.g. for grouping leaves in an image), and the deep learning models can be used by just 
-feeding in image paths. Batch image processing is also supported. The fastai model files are not included!
+of lesion sizes and degree of chlorosis (leaf greenness), and hence quantitative analysis of plant disease progression. The pipeline first takes in
+an image and feeds it into the leaf segmentation model (Black pixels denote background, and white pixels are predicted leaf areas).
+
+![leaf_seg_example](https://github.com/kkl116/Leaf_segmentation/blob/main/assets/leaf_seg_example.png)
+
+Leaves in the image are segmented, and each object is given an id. K-means clustering is then used to group leaves together according to settings provided
+in notebook (e.g. group by row/columns, and how many expected classes there are). Each segmentation is used to extract individual leaf images. Each image
+is then fed into the lesion segmentation model, creating a prediction of the lesion areas (Black denotes backgrond, grey denotes leaf areas, and white denotes predicted lesion areas). 
+
+![lesion_seg_example](https://github.com/kkl116/Leaf_segmentation/blob/main/assets/lesion_seg_example.png)
+
+
