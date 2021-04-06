@@ -10,6 +10,6 @@ Leaves in the image are segmented, and each object is given an id. K-means clust
 in notebook (e.g. group by row/columns, and how many expected classes there are). Each segmentation is used to extract individual leaf images. Each image
 is then fed into the lesion segmentation model, creating a prediction of the lesion areas (Black denotes backgrond, grey denotes leaf areas, and white denotes predicted lesion areas). 
 
-<img src="https://github.com/kkl116/Leaf_segmentation/blob/main/assets/lesion_seg_example.png" width="302" height="284">
+<img src="https://github.com/kkl116/Leaf_segmentation/blob/main/assets/lesion_seg_example.png" width="151" height="142">
 
 
